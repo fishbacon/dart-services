@@ -5,7 +5,6 @@
 library gaeDeployed_test;
 
 import 'package:unittest/unittest.dart';
-import 'dart:io' as io;
 import 'package:http/http.dart' as http;
 import 'package:dartpad_server/src/common.dart' as common;
 
