@@ -151,9 +151,27 @@ class CommonServer {
     } catch (e) {
       return new Future.value(new ServerResponse.badRequest('${e}'));
     }
-
-    return new Future.value(
-        new ServerResponse.notImplemented('Unimplemented: /api/complete'));
+    
+    Stopwatch watch = new Stopwatch()..start();
+    log.info("COMPLETE: ${input.source}, ${input.offset}");
+    
+    try {
+          return analyzer.complete(input.source, input.offset).then(
+              (CompletionResults results) {
+            List resultsOut = results.completions.map((result) => result.proposal).toList();
+            String json = JSON.encode(resultsOut);
+            int lineCount = input.source.split('\n').length;
+            int ms = watch.elapsedMilliseconds;
+            log.info('PERF: Completion ${lineCount} lines of Dart in ${ms}ms.');
+            return new ServerResponse.asJson(json);
+          }).catchError((e) {
+            log.error('Error during analyze: ${e}');
+            return new ServerResponse.internalError('${e}');
+          });
+        } catch (e, st) {
+          log.error('Error during analyze: ${e}\n${st}');
+          return new Future.value(new ServerResponse.internalError('${e}'));
+        }
   }
 
   Future<ServerResponse> handleDocument(String data, [String contentType]) {

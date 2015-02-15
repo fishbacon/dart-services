@@ -86,6 +86,48 @@ class Analyzer {
       return new Future.error(e, st);
     }
   }
+  
+  Future<CompletionResults> complete(String source, int offset) {
+    try {
+      _source.updateSource(source);
+
+      ChangeSet changeSet = new ChangeSet();
+      changeSet.addedSource(_source);
+      _context.applyChanges(changeSet);
+      _context.computeErrors(_source);
+      _context.getErrors(_source);
+      
+      CompilationUnit cu = _context.getResolvedCompilationUnit2(_source, _source);
+      AstNode node = new NodeLocator.con1(offset).searchWithin(cu);
+      //Element e = ElementLocator.locate(node);
+      
+      if (node is SimpleIdentifier) {
+
+            DartType bestType = node.bestType;
+            Element element = node.bestType.element;
+
+            if (element != null && element.library != null) {
+              
+              return new Future.value(new CompletionResults([
+               new CompletionResult ("completion1"),
+               new CompletionResult (node.toSource()),
+               new CompletionResult (bestType.displayName),
+               new CompletionResult (element.displayName)
+                              
+                 ]));
+            }
+      }
+      else {
+        return new Future.value(new CompletionResults([
+          new CompletionResult("")
+          ]));
+      }
+        
+    } catch (e, st) {
+      return new Future.error(e, st);
+    }
+    
+  }
 
   Future<Map<String, String>> dartdoc(String source, int offset) {
     try {
@@ -240,6 +282,18 @@ class _StringSource implements Source {
 
   Uri resolveRelativeUri(Uri relativeUri) =>
       throw new AnalysisException("Cannot resolve a URI: ${relativeUri}");
+}
+
+class CompletionResults {
+  final List<CompletionResult> completions;
+  
+  CompletionResults(this.completions);
+}
+
+class CompletionResult {
+  final String proposal;
+  
+  CompletionResult(this.proposal);
 }
 
 class _Logger extends engine.Logger {
