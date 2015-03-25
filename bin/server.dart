@@ -4,6 +4,14 @@
 
 // To meet GAE needs this file must be called 'server.dart'.
 
-import 'package:services/services_gae.dart' as server;
+import 'package:services/services_server.dart' as server;
+import 'package:logging/logging.dart';
 
-void main(List<String> args) => server.main();
+void main(List<String> args) {
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((LogRecord rec) {
+    print('${rec.level.name}: ${rec.time}: ${rec.message}');
+  });
+
+  server.main(args);
+}
