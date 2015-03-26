@@ -14,9 +14,9 @@ import 'package:analysis_server/src/protocol.dart';
 io.Directory sourceDirectory = io.Directory.systemTemp.createTempSync('analysisServer');
 
 // GAE configurations.
-String PACKAGE_ROOT = '/app/packages';
+String PACKAGE_ROOT = './packages';
 String SDK = '/usr/lib/dart';
-String SERVER_PATH = "/app/lib/src/analysis_server_server.dart";
+String SERVER_PATH = "./lib/src/analysis_server_server.dart";
 
 bool NEEDS_ENABLE_ASYNC = true;
 bool USE_OVERLAYS = true;
