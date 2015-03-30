@@ -8,20 +8,20 @@ import 'dart:io' as io;
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'package:logging/logging.dart';
 
 import 'package:analysis_server/src/protocol.dart';
 
+final Logger _logger = new Logger('completer_driver');
+
 io.Directory sourceDirectory = io.Directory.systemTemp.createTempSync('analysisServer');
 
-// GAE configurations.
-String PACKAGE_ROOT = './packages';
-String SDK = '/usr/lib/dart';
-String SERVER_PATH = "./lib/src/analysis_server_server.dart";
+// GAE configurations
+// TODO(lukechurch): Migrate into a ctor
+String SDK = null;
+String SERVER_PATH = "bin/_analysis_server_entry.dart";
 
-bool NEEDS_ENABLE_ASYNC = true;
-bool USE_OVERLAYS = true;
-
-final Server server = new Server();
+Server server;
 
 /**
  * Type of callbacks used to process notifications.
@@ -43,10 +43,8 @@ int i = 30;
 bool isSetup = false;
 bool isSettingUp = false;
 
-StringBuffer setupLog = new StringBuffer();
-StringBuffer serverLog = new StringBuffer();
-
 Future ensureSetup() async {
+  _logger.fine("ensureSetup: SETUP $isSetup IS_SETTING_UP $isSettingUp");
   if (!isSetup && !isSettingUp) {
     return setup();
   }
@@ -54,7 +52,10 @@ Future ensureSetup() async {
 }
 
 Future setup() async {
+  _logger.fine("Setup starting");
   isSettingUp = true;
+
+  server = new Server();
 
   _onServerStatus = new StreamController<bool>(sync: true);
   analysisComplete = _onServerStatus.stream.asBroadcastStream();
@@ -62,65 +63,57 @@ Future setup() async {
   _onCompletionResults = new StreamController(sync: true);
   completionResults = _onCompletionResults.stream.asBroadcastStream();
 
-  if (!USE_OVERLAYS) f.writeAsStringSync(src0, flush: true);
-
-  setupLog.writeln("Server about to start");
+  _logger.fine("Server about to start");
 
   // Warm up target.
-  return server.start().then((_) {
-    setupLog.writeln("Server started");
+  await server.start();
+  _logger.fine("Setver started");
 
-    server.listenToOutput(dispatchNotification);
-    server.sendServerSetSubscriptions([ServerService.STATUS]);
+  server.listenToOutput(dispatchNotification);
+  server.sendServerSetSubscriptions([ServerService.STATUS]);
 
-    setupLog.writeln("Server Set Subscriptions completed");
+  _logger.fine("Server Set Subscriptions completed");
 
-    f.writeAsStringSync("", flush: true);
+  f.writeAsStringSync("", flush: true);
 
-    setupLog.writeln("File write completed");
+  await sendAddOverlay(path, src0);
+  sendAnalysisSetAnalysisRoots([sourceDirectory.path], []);
+  server.sendPrioritySetSources([path]);
+  isSettingUp = false;
+  isSetup = true;
 
-    var continuation = (_) {
-      sendAnalysisSetAnalysisRoots([sourceDirectory.path], []);
-      setupLog.writeln("Analysis Roots set");
+  _logger.fine("Setup done");
 
-      server.sendPrioritySetSources([path]);
-      setupLog.writeln("Priority sources set");
+  return analysisComplete.first;
 
-      isSettingUp = false;
-      isSetup = true;
-      return analysisComplete.first;
-    };
-
-    if (!USE_OVERLAYS) {
-      return continuation(null);
-    } else {
-      return sendAddOverlay(path, src0).then(continuation);
-    }
-  });
 }
 
-Future<Map> _complete(String src, int offset) {
-  var continuation = (_) {
-    return analysisComplete.first.then((_) {
-      return sendCompletionGetSuggestions(path, offset).then((_) {
-        return completionResults.first;
-      });
-    });
-  };
+Future<Map> _complete(String src, int offset) async {
+  await sendAddOverlay(path, src);
+  await analysisComplete.first;
+  await sendCompletionGetSuggestions(path, offset);
 
-  var ret = sendAddOverlay(path, src).then(continuation);
-  isSettingUp = false;
-  return ret;
+  return completionResults.handleError(
+      (error) => throw "Completion failed").first;
 }
 
 Future<Map> completeSyncy(String src, int offset) async =>
     _complete(src, offset);
 
-//procResults(List results) {
-//  return results.map((r) => r['completion']);
-//}
+dispatchNotification(String event, params) async {
+  if (event == "server.error") {
+    // Something has gone wrong with the analysis server. This request is going
+    // to fail, but we need to restart the server to be able to process
+    // another request
+    isSetup = false;
+    isSettingUp = false;
 
-void dispatchNotification(String event, params) {
+    await server.kill();
+    _onCompletionResults.addError(null);
+    _logger.severe("Analysis server has crashed. $event");
+    return;
+  }
+
   if (event == "server.status" && params.containsKey('analysis') &&
       !params['analysis']['isAnalyzing']) {
     _onServerStatus.add(true);
@@ -151,15 +144,15 @@ Future<CompletionGetSuggestionsResult> sendCompletionGetSuggestions(
 
 Future<AnalysisUpdateContentResult> sendAddOverlay(
     String file, String contents) {
-  setupLog.writeln("sendAddOverlay: $file $contents");
+  //_logger.fine("sendAddOverlay: $file $contents");
 
   var overlay = new AddContentOverlay(contents);
   var params = new AnalysisUpdateContentParams({file: overlay}).toJson();
 
-  setupLog.writeln("About to send analysis.updateContent");
+  _logger.fine("About to send analysis.updateContent");
 
   return server.send("analysis.updateContent", params).then((result) {
-    setupLog.writeln("analysis.updateContent -> then");
+    _logger.fine("analysis.updateContent -> then");
 
     ResponseDecoder decoder = new ResponseDecoder(null);
     return new AnalysisUpdateContentResult.fromJson(decoder, 'result', result);
@@ -271,8 +264,6 @@ class Server {
         (new Utf8Codec()).decoder).transform(new LineSplitter()).listen((String line) {
       String trimmedLine = line.trim();
 
-      serverLog.writeln(trimmedLine);
-
       _recordStdio('RECV: $trimmedLine');
       var message;
       try {
@@ -344,7 +335,7 @@ class Server {
    * error response, the future will be completed with an error.
    */
   Future send(String method, Map<String, dynamic> params) {
-    serverLog.writeln("Server.send $method $params");
+    _logger.fine("Server.send $method");
 
     String id = '${_nextId++}';
     Map<String, dynamic> command = <String, dynamic>{
@@ -388,8 +379,6 @@ class Server {
     //arguments.add ('--port=8181');
     //arguments.add ("8181");
 
-    if (NEEDS_ENABLE_ASYNC) arguments.add('--enable-async');
-    arguments.add('-p$PACKAGE_ROOT');
     //arguments.add('--enable-vm-service=8183');
     //arguments.add('--profile');
     if (debugServer) {
@@ -402,7 +391,7 @@ class Server {
     if (io.Platform.packageRoot.isNotEmpty) {
       arguments.add('--package-root=${io.Platform.packageRoot}');
     }
-    arguments.add('--checked');
+
     arguments.add(SERVER_PATH);
 
     //arguments.add ('--port');
@@ -411,11 +400,11 @@ class Server {
     arguments.add('--sdk');
     arguments.add(SDK);
 
-    setupLog.writeln("Binary: $dartBinary");
-    setupLog.writeln("Arguments: $arguments");
+    _logger.fine("Binary: $dartBinary");
+    _logger.fine("Arguments: $arguments");
 
     return io.Process.start(dartBinary, arguments).then((io.Process process) {
-      setupLog.writeln("io.Process.then returned");
+      _logger.fine("io.Process.then returned");
 
       _process = process;
       process.exitCode.then((int code) {
@@ -465,7 +454,7 @@ class Server {
    * [debugStdio] has been called.
    */
   void _recordStdio(String line) {
-    setupLog.writeln(line);
+    _logger.fine(line);
 
     double elapsedTime = _time.elapsedTicks / _time.frequency;
     line = "$elapsedTime: $line";
@@ -475,3 +464,4 @@ class Server {
     _recordedStdio.add(line);
   }
 }
+
