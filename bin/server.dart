@@ -4,14 +4,19 @@
 
 // To meet GAE needs this file must be called 'server.dart'.
 
+import 'dart:io';
+
 import 'package:services/services_server.dart' as server;
 import 'package:logging/logging.dart';
 
 void main(List<String> args) {
   Logger.root.level = Level.ALL;
+  var file = new File('dartservices.log');
+  var sink = file.openWrite(mode: FileMode.APPEND);
   Logger.root.onRecord.listen((LogRecord rec) {
-    print('${rec.level.name}: ${rec.time}: ${rec.message}');
+    sink.write('${rec.time}: (${rec.level.name}) ${rec.message}\n');
   });
 
+  sink.write(' --- DART SERVICES STARTED AT ${new DateTime.now().toIso8601String()} ---\n');
   server.main(args);
 }

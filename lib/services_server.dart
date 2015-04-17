@@ -167,7 +167,7 @@ class _Cache implements ServerCache {
 
 class _Recorder implements SourceRequestRecorder {
   Future record(String verb, String source, [int offset = -99]) {
-    _logger.fine("$verb, $offset, $source");
+    _logger.fine("$verb, $offset, \n\n\n__BEGIN_SOURCE_CODE__\n${source}\n__END_OF_SOURCE_CODE__\n\n\n");
     return new Future.value();
   }
 }
