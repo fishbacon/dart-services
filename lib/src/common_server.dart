@@ -99,6 +99,18 @@ class DocumentResponse {
   DocumentResponse(this.info);
 }
 
+class StartResponse{
+  final Map<String, String> info;
+
+  StartResponse(this.info);
+}
+
+class SubmitResponse{
+  final Map<String, String> info;
+
+  SubmitResponse(this.info);
+}
+
 @ApiClass(name: 'dartservices', version: 'v1')
 class CommonServer {
   final ServerCache cache;
@@ -176,6 +188,29 @@ class CommonServer {
   @ApiMethod(method: 'GET', path: 'document')
   Future<DocumentResponse> documentGet({String source, int offset}) {
     return _document(source, offset);
+  }
+
+  @ApiMethod(method: 'POST', path: 'submit')
+  Future<SubmitResponse> submit(SourceRequest request){
+    return _submit(request.source);
+  }
+
+  @ApiMethod(method: 'GET', path: 'submit')
+  Future<SubmitResponse> submitGet({String source, int offset}){
+    return _submit(source);
+  }
+
+  @ApiMethod(method: 'GET', path: 'start')
+  Future<StartResponse> startGet(){
+    return _start();
+  }
+
+  Future<StartResponse> _start(){
+    return new StartResponse({"started": "true"});
+  }
+
+  Future<SubmitResponse> _submit(String source){
+    return new SubmitResponse({"submitted": "true"});
   }
 
   Future<AnalysisResults> _analyze(String source) async {
